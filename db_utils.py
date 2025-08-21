@@ -5,9 +5,13 @@ import pytz
 from datetime import datetime
 import locale
 
+from aiogram import Router, F
+from aiogram.exceptions import TelegramBadRequest
+from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
+from aiogram.types import Message, CallbackQuery
 
-from utils_funcs import find_resource_path
+from utils_funcs import find_resource_path, create_input_file
 
 
 class DBUtils:
@@ -15,8 +19,8 @@ class DBUtils:
         self.db = sq.connect(find_resource_path('data/bot.db'))
         self.cur = self.db.cursor()
         self.__dict__.update({key: config.jsons[key] for key in ['keyboards', 'messages', 'stats']})
-        self.stat = Stats(self) if config.admin_chat_id else None
         self.config = config
+        self.stat = Stats(self) if config.admin_chat_id else None
 
     async def start_db(self, *queries: list[str | list]):
         self.cur.execute('''
@@ -74,10 +78,14 @@ class Stats:
         self.config = dbutils.config
         self.db = dbutils.db
         self.cur = self.db.cursor()
+        self.admin_chat = self.config.admin_chat_id
         self.tz = pytz.timezone('Asia/Irkutsk')
         locale.setlocale(category=locale.LC_ALL, locale="Russian")
+        self.base_args = {'reply_markup': self.config.keyboards.get('stat'), **self.config.default_args}
+        self.start_db()
+        self.router = self.set_router()
 
-    def start(self) -> None:
+    def start_db(self) -> None:
         table = self.get_table_name()
         self.cur.execute(f'''
                             CREATE TABLE IF NOT EXISTS {table} (
@@ -89,8 +97,41 @@ class Stats:
                              [(btn,) for btn in self.config.jsons['stats'] + ['active_users', 'inactive_users']])
         self.db.commit()
 
+    def set_router(self) -> Router:
+        router = Router()
+
+        @router.message(Command('stat'), F.chat.id == self.config.admin_chat_id)
+        async def stat_cmd(message: Message, state: FSMContext):
+            await message.delete()
+            await message.answer(**await self.format_stat(state))
+
+        @router.message(Command('db'), F.chat.id == self.config.admin_chat_id)
+        async def db_cmd(message: Message):
+            await message.delete()
+            await message.answer_document(create_input_file(self.config.data_folder / 'bot.db'),
+                                          caption='База данных <b>успешно</b> выгружена ✅', parse_mode='HTML')
+
+        @router.callback_query(F.data == 'stat')
+        async def stat(callback: CallbackQuery, state: FSMContext):
+            try:
+                await callback.message.edit_text(**await self.format_stat(state))
+            except TelegramBadRequest:
+                await callback.answer('Вы на первой странице 🏠')
+
+        @router.callback_query(F.data.startswith('stat'))
+        async def stat_scroll(callback: CallbackQuery, state: FSMContext):
+            stats = (await state.get_data()).get('stat') or await self.get_stats()
+            current = stats.index(callback.message.html_text)
+            current += 1 if callback.data.endswith('forward') else -1
+            if 0 <= current < len(stats):
+                await callback.message.edit_text(stats[current], **self.base_args)
+            else:
+                await callback.answer('Больше значений нет 😢')
+
+        return router
+
     def get_stat_name(self, stat: str) -> str | None:
-        for key, value in self.config.keyboards.items():
+        for key, value in self.config.jsons['keyboards'].items():
             for callback, text in value.items():
                 if callback == stat:
                     return text
@@ -103,7 +144,7 @@ class Stats:
 
     async def get_table(self, table_name: str) -> dict[str, int]:
         table_name = table_name or self.get_table_name()
-        entries = await self.config.execute_query(f'SELECT * FROM {table_name}')
+        entries = await self.dbutils.execute_query(f'SELECT * FROM {table_name}')
         result = {}
         for entry in entries:
             btn = entry[0]
@@ -114,6 +155,8 @@ class Stats:
         if temp is None:
             temp = {}
         table = await self.get_table(table_name)
+        if table_name == '':
+            print(table)
         result, total, users = [], 0, []
         for text, count in table.items():
             if text.endswith('users'):
@@ -125,8 +168,8 @@ class Stats:
         return sum(users), *users, total, '\n'.join(result)
 
     async def get_stats(self) -> list[str]:
-        template = self.config.messages.get('stat')
-        main_text = self.config.messages.get('all_stat').format(*await self.get_stat())
+        template = self.config.messages.get('stat')['text']
+        main_text = self.config.messages.get('all_stat')['text'].format(*await self.get_stat())
         months = []
         temp = {}
         tables = await self.dbutils.execute_query('SELECT name FROM sqlite_master WHERE type="table"')
@@ -145,7 +188,7 @@ class Stats:
     async def format_stat(self, state: FSMContext) -> dict[str, str]:
         stat_months = await self.get_stats()
         await state.update_data(stat=stat_months)
-        return {'text': stat_months[0], **self.config.default_args}
+        return {'text': stat_months[0], **self.base_args}
 
     async def increase_stat(self, button: str) -> None:
         await self.dbutils.execute_query(f'UPDATE {self.get_table_name()} SET count = count + 1 WHERE button = {button}')

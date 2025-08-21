@@ -4,10 +4,11 @@ from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
 from aiogram.filters import CommandStart
 
+import config
 from bot_config import BotConfig
 
 router = Router()
-bot_config = BotConfig(default_answer='эщкере')
+bot_config = BotConfig(default_answer='эщкере', admin_chat_id=config.ADMIN)
 
 
 @router.message(CommandStart())

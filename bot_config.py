@@ -12,7 +12,7 @@ from utils_funcs import *
 
 
 class BotConfig:
-    def __init__(self, data_folder: Path = None, default_answer: str = '', default_args: dict = None, back_exclusions: tuple = None, admin_chat_id: int = None) -> None:
+    def __init__(self, data_folder: Path = None, default_answer: str = '', default_args: dict = None, back_exclusions: tuple = None, admin_chat_id: int | str = None) -> None:
         """
         Создает быструю конфигурацию бота из JSON файлов.
 
@@ -30,12 +30,12 @@ class BotConfig:
         self.default_answer = default_answer
         self.default_args = default_args or {'parse_mode': 'HTML', 'disable_web_page_preview': True}
         self.back_exclusions = back_exclusions or ('start', 'broadcast', 'stat')
-        self.admin_chat_id = admin_chat_id
+        self.admin_chat_id = int(admin_chat_id) if admin_chat_id else None
         self.jsons = self.keyboards = self.images = self.messages = None
         self.load_all()
         self.db = DBUtils(self)
-        self.stat = self.db.stat
         self.router, self.stat_router = self.set_routers()
+        self.stat_router = self.db.stat.router if self.db.stat else None
 
     @private
     def get_previous_section(self, needle: str) -> str | None:
@@ -110,7 +110,7 @@ class BotConfig:
                 args['text'] = raw_messages.get(callback)
             self.messages[callback] = args
 
-    def set_routers(self) -> tuple[Router, Router]:
+    def set_router(self) -> Router:
         router = Router()
 
         if self.default_answer:
@@ -122,38 +122,7 @@ class BotConfig:
         async def handle_callback(callback: CallbackQuery):
             await self.handle_message(callback)
 
-        stat_router = Router()
-
-        if self.stat:
-            @stat_router.message(Command('stat'), F.chat.id == self.admin_chat_id)
-            async def stat_cmd(message: Message, state: FSMContext):
-                await message.delete()
-                await message.answer(**await self.stat.format_stat(state))
-
-            @stat_router.message(Command('db'), F.chat.id == self.admin_chat_id)
-            async def db_cmd(message: Message):
-                await message.delete()
-                await message.answer_document(create_input_file(self.data_folder / 'bot.db'),
-                                              caption='База данных <b>успешно</b> выгружена ✅', parse_mode='HTML')
-
-            @stat_router.callback_query(F.data == 'stat')
-            async def stat(callback: CallbackQuery, state: FSMContext):
-                try:
-                    await callback.message.edit_text(**await self.stat.format_stat(state))
-                except TelegramBadRequest:
-                    await callback.answer('Вы на первой странице 🏠')
-
-            @stat_router.callback_query(F.data.startswith('stat'))
-            async def stat_scroll(callback: CallbackQuery, state: FSMContext):
-                stats = (await state.get_data()).get('stat') or await self.stat.get_stats()
-                current = stats.index(callback.message.html_text)
-                current += 1 if callback.data.endswith('forward') else -1
-                if 0 <= current < len(stats):
-                    await callback.message.edit_text(stats[current], **self.default_args)
-                else:
-                    await callback.answer('Больше значений нет 😢')
-
-        return router, stat_router
+        return router
 
     async def handle_message(self, callback: CallbackQuery, additional: dict = None) -> None:
         args = self.messages.get(callback.data) or self.default_args
