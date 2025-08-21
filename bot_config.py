@@ -6,7 +6,7 @@ from aiogram.types import InputMediaPhoto, Message, CallbackQuery
 from aiogram.filters import Command
 from accessify import private, protected
 
-from DBUtils import DBUtils
+from db_utils import DBUtils
 from utils.filesystem import create_input_file, find_resource_path
 from utils_funcs import *
 
@@ -36,6 +36,7 @@ class BotConfig:
         self.images = self.load_images()
         self.messages = self.load_messages()
         self.db = DBUtils(self)
+        self.stat = self.db.stat
         self.router, self.stat_router = self.set_routers()
 
     @private
@@ -46,6 +47,7 @@ class BotConfig:
                     return key
         return None
 
+    @private
     def generate_keyboards(self) -> dict[str, InlineKeyboardMarkup]:
         kbs = {}
         for key, kb in self.jsons['keyboards'].items():
@@ -113,11 +115,11 @@ class BotConfig:
 
         stat_router = Router()
 
-        if self.admin_chat_id is not None:
+        if self.stat:
             @stat_router.message(Command('stat'), F.chat.id == self.admin_chat_id)
             async def stat_cmd(message: Message, state: FSMContext):
                 await message.delete()
-                await message.answer(**await self.db.receive_stat(state))
+                await message.answer(**await self.stat.format_stat(state))
 
             @stat_router.message(Command('db'), F.chat.id == self.admin_chat_id)
             async def db_cmd(message: Message):
@@ -128,13 +130,13 @@ class BotConfig:
             @stat_router.callback_query(F.data == 'stat')
             async def stat(callback: CallbackQuery, state: FSMContext):
                 try:
-                    await callback.message.edit_text(**await self.db.receive_stat(state))
+                    await callback.message.edit_text(**await self.stat.format_stat(state))
                 except TelegramBadRequest:
                     await callback.answer('Вы на первой странице 🏠')
 
             @stat_router.callback_query(F.data.startswith('stat'))
             async def stat_scroll(callback: CallbackQuery, state: FSMContext):
-                stats = (await state.get_data()).get('stat') or await self.db.get_stats()
+                stats = (await state.get_data()).get('stat') or await self.stat.get_stats()
                 current = stats.index(callback.message.html_text)
                 current += 1 if callback.data.endswith('forward') else -1
                 if 0 <= current < len(stats):
