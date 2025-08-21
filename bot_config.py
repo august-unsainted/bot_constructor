@@ -26,15 +26,13 @@ class BotConfig:
         :type back_exclusions: tuple, optional
         """
 
-        self.data_folder = data_folder or Path.cwd().parent / 'data'
+        self.data_folder = data_folder or Path.cwd() / 'data'
         self.default_answer = default_answer
         self.default_args = default_args or {'parse_mode': 'HTML', 'disable_web_page_preview': True}
         self.back_exclusions = back_exclusions or ('start', 'broadcast', 'stat')
         self.admin_chat_id = admin_chat_id
-        self.jsons = self.load_jsons()
-        self.keyboards = self.generate_keyboards()
-        self.images = self.load_images()
-        self.messages = self.load_messages()
+        self.jsons = self.keyboards = self.images = self.messages = None
+        self.load_all()
         self.db = DBUtils(self)
         self.stat = self.db.stat
         self.router, self.stat_router = self.set_routers()
@@ -48,44 +46,56 @@ class BotConfig:
         return None
 
     @private
-    def generate_keyboards(self) -> dict[str, InlineKeyboardMarkup]:
-        kbs = {}
+    def load_all(self):
+        self.load_jsons()
+        self.load_keyboards()
+        self.load_images()
+        self.load_messages()
+
+    @staticmethod
+    def load_files(target_dir: Path, func: callable) -> dict:
+        result = {}
+        for root, _, files in target_dir.walk():
+            for file in files:
+                file_path = root / file
+                func(result, file_path)
+        return result
+
+    def load_images(self) -> None:
+        img_folder = self.data_folder / 'images'
+        src_dir = Path(find_resource_path(img_folder))
+
+        def append_file(result: dict, file_path: Path):
+            fsinput = create_input_file(file_path)
+            file = file_path.stem
+            caption = self.jsons['messages'].get(file)
+            result[file] = InputMediaPhoto(media=fsinput, caption=caption, parse_mode='HTML')
+            if file == 'start':
+                result['cmd_start'] = fsinput
+
+        self.images = self.load_files(src_dir, append_file)
+
+    def load_jsons(self) -> None:
+        json_dir = self.data_folder / 'json'
+
+        def append_file(result: dict, file_path: Path):
+            data = orjson.loads(file_path.read_bytes())
+            result[file_path.stem] = next(iter(data.values())) if len(data) == 1 else data
+        self.jsons = self.load_files(json_dir, append_file)
+
+    def load_keyboards(self) -> None:
+        self.keyboards = {}
         for key, kb in self.jsons['keyboards'].items():
             if key.endswith(self.back_exclusions) or 'back' in kb:
                 back = None
             else:
                 back = self.get_previous_section(key)
-            kbs[key] = generate_kb(back, kb)
-        kbs['stat'] = InlineKeyboardMarkup(inline_keyboard=[[row[0] for row in kbs.get('stat').inline_keyboard]])
-        return kbs
+            self.keyboards[key] = generate_kb(back, kb)
+        self.keyboards['stat'] = InlineKeyboardMarkup(inline_keyboard=[[row[0] for row in self.keyboards.get('stat').inline_keyboard]])
 
-    def load_images(self) -> dict:
-        imgs = {}
-        img_folder = self.data_folder / 'images'
-        src_dir = Path(find_resource_path(img_folder))
-        for root, _, files in src_dir.walk():
-            for file in files:
-                fsinput = create_input_file(img_folder / file)
-                file = (root / file).stem
-                imgs[file] = InputMediaPhoto(media=fsinput, caption=self.jsons['messages'].get(file), parse_mode='HTML')
-                if file == 'start':
-                    imgs['cmd_start'] = fsinput
-        return imgs
-
-    def load_jsons(self) -> dict[str, dict[str, str]]:
-        json_dir = self.data_folder / 'json'
-        result = {}
-        for root, _, files in json_dir.walk():
-            for file in files:
-                if file.endswith('.json'):
-                    file_path = json_dir / file
-                    data = orjson.loads(file_path.read_bytes())
-                    result[file[:-5]] = next(iter(data.values())) if len(data) == 1 else data
-        return result
-
-    def load_messages(self) -> dict[str, dict[str, str | InlineKeyboardMarkup | FSInputFile]]:
+    def load_messages(self) -> None:
         raw_messages = self.jsons['messages']
-        messages = {
+        self.messages = {
             'cmd_start': {
                 'photo':        self.images.get('cmd_start'), 'caption': raw_messages.get('start'),
                 'reply_markup': self.keyboards.get('start'), **self.default_args
@@ -98,8 +108,7 @@ class BotConfig:
                 args['media'] = self.images.get(callback)
             else:
                 args['text'] = raw_messages.get(callback)
-            messages[callback] = args
-        return messages
+            self.messages[callback] = args
 
     def set_routers(self) -> tuple[Router, Router]:
         router = Router()

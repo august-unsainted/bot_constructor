@@ -12,10 +12,11 @@ from utils_funcs import find_resource_path
 
 class DBUtils:
     def __init__(self, config):
-        self.db = sq.connect(find_resource_path('data/applicant.db'))
+        self.db = sq.connect(find_resource_path('data/bot.db'))
         self.cur = self.db.cursor()
         self.__dict__.update({key: config.jsons[key] for key in ['keyboards', 'messages', 'stats']})
         self.stat = Stats(self) if config.admin_chat_id else None
+        self.config = config
 
     async def start_db(self, *queries: list[str | list]):
         self.cur.execute('''
@@ -49,11 +50,12 @@ class DBUtils:
 
     async def count_users(self) -> dict[str, int]:
         result = {}
-        table = self.get_table_name()
         for is_active in [1, 0]:
             key = 'in' * (not is_active) + 'active'
             result[key] = len(await self.execute_query(f'SELECT * FROM users WHERE is_active = {is_active}'))
-            await self.execute_query(f"UPDATE {table} SET count = ? WHERE button = ?", result[key], key + '_users')
+            if self.stat:
+                await self.execute_query(f"UPDATE {self.stat.get_table_name()} SET count = ? WHERE button = ?",
+                                         result[key], key + '_users')
 
         result['all'] = sum(result.values())
         return result
@@ -72,19 +74,18 @@ class Stats:
         self.config = dbutils.config
         self.db = dbutils.db
         self.cur = self.db.cursor()
-        self.table = self.get_table_name()
         self.tz = pytz.timezone('Asia/Irkutsk')
         locale.setlocale(category=locale.LC_ALL, locale="Russian")
 
-
     def start(self) -> None:
+        table = self.get_table_name()
         self.cur.execute(f'''
-                            CREATE TABLE IF NOT EXISTS {self.table} (
+                            CREATE TABLE IF NOT EXISTS {table} (
                             button text PRIMARY KEY,
                             count INTEGER DEFAULT 0
                             )
                         ''')
-        self.cur.executemany(f'INSERT OR IGNORE INTO {self.table} (button) VALUES (?)',
+        self.cur.executemany(f'INSERT OR IGNORE INTO {table} (button) VALUES (?)',
                              [(btn,) for btn in self.config.jsons['stats'] + ['active_users', 'inactive_users']])
         self.db.commit()
 

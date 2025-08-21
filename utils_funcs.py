@@ -29,5 +29,5 @@ def find_resource_path(relative_path) -> str:
     try:
         base_path = Path(sys._MEIPASS)
     except AttributeError:
-        base_path = Path(__file__).parent.parent
+        base_path = Path.cwd()
     return str(base_path / relative_path)
