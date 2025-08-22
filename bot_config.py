@@ -1,10 +1,10 @@
+from typing import Callable
+
 import orjson
-from aiogram import Router, F
+from aiogram import Router
 from aiogram.exceptions import TelegramBadRequest
-from aiogram.fsm.context import FSMContext
 from aiogram.types import InputMediaPhoto, Message, CallbackQuery
-from aiogram.filters import Command
-from accessify import private, protected
+from accessify import private
 
 from db_utils import DBUtils
 from utils.filesystem import create_input_file, find_resource_path
@@ -34,7 +34,7 @@ class BotConfig:
         self.jsons = self.keyboards = self.images = self.messages = None
         self.load_all()
         self.db = DBUtils(self)
-        self.router, self.stat_router = self.set_routers()
+        self.router, self.stat_router = self.set_router()
         self.stat_router = self.db.stat.router if self.db.stat else None
 
     @private
@@ -53,7 +53,7 @@ class BotConfig:
         self.load_messages()
 
     @staticmethod
-    def load_files(target_dir: Path, func: callable) -> dict:
+    def load_files(target_dir: Path, func: Callable) -> dict:
         result = {}
         for root, _, files in target_dir.walk():
             for file in files:
