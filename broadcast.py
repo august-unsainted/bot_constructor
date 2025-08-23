@@ -1,5 +1,5 @@
 import asyncio
-from typing import Any, Callable
+from typing import Any, Callable, Union
 
 from aiogram import Router, Bot, F
 from aiogram.exceptions import TelegramRetryAfter, TelegramAPIError, AiogramError, TelegramBadRequest
@@ -8,7 +8,6 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 from aiogram.types import Message, InlineKeyboardMarkup, CallbackQuery, User, InputMediaPhoto
 
-from db_utils import DBUtils
 from utils.db import update_activity
 
 
@@ -19,7 +18,7 @@ class States(StatesGroup):
 
 
 class Broadcast:
-    def __init__(self, db: DBUtils):
+    def __init__(self, db):
         self.db = db
         self.config = self.db.config
         kbs = self.config.keyboards
@@ -27,27 +26,28 @@ class Broadcast:
         self.keyboards['receive'] = kbs.get('broadcast')
         self.messages = self.config.jsons['messages']
         self.base_args = self.config.default_args
+        self.router = self.set_router()
 
-    async def get_args(self, message: Message, state: FSMContext = None, kb: InlineKeyboardMarkup = None) -> dict[str, Any]:
+    @staticmethod
+    async def get_args(message: Message, state: FSMContext = None, kb: InlineKeyboardMarkup = None) -> dict[str, Any]:
         message_id = (await state.get_data()).get('message_id') if state else message.message_id
-        args = {'chat_id': message.chat.id, 'message_id': message_id, **self.base_args}
+        args = {'chat_id': message.chat.id, 'message_id': message_id}
         if kb:
             args['reply_markup'] = kb
         return args
 
     async def get_media(self, message: Message, state: FSMContext, bot: Bot) -> None:
         await bot.edit_message_text(self.messages.get('broadcast_text').format(message.text),
-                                    **await self.get_args(message, state, self.keyboards['edit']))
+                                    **await self.get_args(message, state, self.keyboards['edit']), **self.base_args)
         await state.set_state(States.media)
 
     async def get_result(self, state: FSMContext) -> str:
         data = await state.get_data()
-        return self.messages.get('broadcast_result').format(data.get('text'), )
+        return self.messages.get('broadcast_result').format(data.get('text'), await self.get_active())
 
     @staticmethod
     def get_media_args(data: dict, args: dict = None, text: str = None) -> dict[str, Any]:
-        if not args:
-            args = {}
+        args = args or {}
         key = 'caption' if data.get('media') else 'text'
         args[key] = text or data.get('text')
         return args
@@ -98,24 +98,29 @@ class Broadcast:
     @staticmethod
     async def handle_message_edit(bot: Bot, text: str, args: dict, admin_args: dict = None) -> None:
         try:
-            admin_args = Broadcast.get_media_args(admin_args.copy(), text=text)
+            message_args = Broadcast.get_media_args(args, args=admin_args.copy(), text=text)
             func = bot.edit_message_caption if args.get('media') else bot.edit_message_text
-            await func(**admin_args)
+            await func(**message_args)
         except TelegramBadRequest:
-            admin_args.pop('message_id')
+            admin_args = admin_args.copy()
+            if admin_args.get('message_id'):
+                admin_args.pop('message_id')
             await bot.send_message(text=text, **admin_args)
+
+    async def get_active(self) -> int:
+        return len(await self.db.get_active_users())
 
     def set_router(self):
         router = Router()
 
-        async def initiate_broadcast(event_update: Message | CallbackQuery, state: FSMContext):
+        async def initiate_broadcast(event: Union[Message, CallbackQuery], state: FSMContext):
             await state.clear()
-            args = {'text': self.messages.get('broadcast').format(await self.db.get_active_users()),
+            args = {'text': self.messages.get('broadcast').format(await self.get_active()),
                     'reply_markup': self.keyboards['cancel']}
-            if isinstance(event_update, Message):
-                response = await event_update.answer(**args)
+            if isinstance(event, Message):
+                response = await event.answer(**args)
             else:
-                response = await self.config.handle_text_edit(event_update.message, args)
+                response = await self.config.handle_edit_message(event.message, args)
             await state.update_data(message_id=response.message_id)
             await state.set_state(States.text)
 
@@ -142,7 +147,7 @@ class Broadcast:
                 return await self.get_media(message, state, bot)
             media = message.photo[0].file_id
             await state.update_data(media=media)
-            input_media = InputMediaPhoto(media=media, caption=await self.get_result(state))
+            input_media = InputMediaPhoto(media=media, caption=await self.get_result(state), **self.base_args)
             await bot.edit_message_media(media=input_media, **await self.get_args(message, state, confirm_kb))
 
         @router.callback_query(F.data == 'skip_pictures')
@@ -154,7 +159,7 @@ class Broadcast:
         async def confirm_broadcast(callback: CallbackQuery, state: FSMContext, bot: Bot):
             data = await state.get_data()
             await state.clear()
-            admin_params = await self.get_args(callback.message)
+            admin_params = {**await self.get_args(callback.message), **self.base_args}
             await self.handle_message_edit(callback.message.bot, f'⏳ <b>Рассылка в процессе…</b>', data, admin_params)
             params = {key: data[key] for key in ['text', 'media']}
             await self.send_broadcast(bot, callback.from_user, admin_params, params)

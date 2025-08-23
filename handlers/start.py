@@ -13,9 +13,6 @@ bot_config = BotConfig(default_answer='эщкере', admin_chat_id=config.ADMIN
 
 @router.message(CommandStart())
 async def cmd_start(message: Message):
+    # await message.answer(str(message.chat.id))
     await message.answer_photo(**bot_config.messages.get('cmd_start'))
-
-
-@router.message(CommandStart())
-async def cmd_start(message: Message):
-    await message.answer(str(message.chat.id))
+    await bot_config.db.add_user(message.from_user.id)
