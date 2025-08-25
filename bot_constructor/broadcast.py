@@ -8,9 +8,6 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 from aiogram.types import Message, InlineKeyboardMarkup, CallbackQuery, User, InputMediaPhoto
 
-from utils.db import update_activity
-
-
 class States(StatesGroup):
     message_id = State()
     text = State()
@@ -60,7 +57,7 @@ class Broadcast:
             return await self.send_message(user_id, func, params)
         except (TelegramAPIError, AiogramError) as e:
             print(f"Ошибка отправки пользователю {user_id}: {e}")
-            await update_activity(user_id)
+            await self.db.update_activity(user_id)
         else:
             return True
         return False

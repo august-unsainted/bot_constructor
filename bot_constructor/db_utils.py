@@ -11,15 +11,15 @@ from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.types import Message, CallbackQuery
 
-from broadcast import Broadcast
-from utils_funcs import find_resource_path, create_input_file
+from bot_constructor.broadcast import Broadcast
+from bot_constructor.utils_funcs import find_resource_path, create_input_file
 
 
 class DBUtils:
     def __init__(self, config):
         self.db = sq.connect(find_resource_path('data/bot.db'))
         self.cur = self.db.cursor()
-        self.__dict__.update({key: config.jsons[key] for key in ['keyboards', 'messages', 'stats']})
+        self.__dict__.update({key: config.jsons[key] for key in ['keyboards', 'messages', 'stats'] if key in config.jsons})
         self.config = config
         self.start_db()
         self.stat, self.broadcast = (Stats(self), Broadcast(self)) if config.admin_chat_id else (None, None)

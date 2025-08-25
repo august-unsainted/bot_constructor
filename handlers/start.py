@@ -1,7 +1,5 @@
-from pathlib import Path
-
-from aiogram import Router, F
-from aiogram.types import Message, CallbackQuery
+from aiogram import Router
+from aiogram.types import Message
 from aiogram.filters import CommandStart
 
 import config

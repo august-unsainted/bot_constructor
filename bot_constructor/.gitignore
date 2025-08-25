@@ -1,0 +1,9 @@
+.venv
+.idea
+__pycache__
+data
+utils
+app
+config.py
+run.py
+test.py

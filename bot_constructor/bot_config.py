@@ -6,9 +6,8 @@ from aiogram.exceptions import TelegramBadRequest
 from aiogram.types import InputMediaPhoto, Message, CallbackQuery
 from accessify import private
 
-from db_utils import DBUtils
-from utils.filesystem import create_input_file, find_resource_path
-from utils_funcs import *
+from bot_constructor.db_utils import DBUtils
+from bot_constructor.utils_funcs import *
 
 
 class BotConfig:
@@ -92,7 +91,8 @@ class BotConfig:
             else:
                 back = self.get_previous_section(key)
             self.keyboards[key] = generate_kb(back, kb)
-        self.keyboards['stat'] = InlineKeyboardMarkup(inline_keyboard=[[row[0] for row in self.keyboards.get('stat').inline_keyboard]])
+        if self.keyboards.get('stat'):
+            self.keyboards['stat'] = InlineKeyboardMarkup(inline_keyboard=[[row[0] for row in self.keyboards.get('stat').inline_keyboard]])
 
     def load_messages(self) -> None:
         raw_messages = self.jsons['messages']
