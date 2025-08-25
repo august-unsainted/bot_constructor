@@ -11,6 +11,7 @@ from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.types import Message, CallbackQuery
 
+from broadcast import Broadcast
 from utils_funcs import find_resource_path, create_input_file
 
 
@@ -20,9 +21,10 @@ class DBUtils:
         self.cur = self.db.cursor()
         self.__dict__.update({key: config.jsons[key] for key in ['keyboards', 'messages', 'stats']})
         self.config = config
-        self.stat = Stats(self) if config.admin_chat_id else None
+        self.start_db()
+        self.stat, self.broadcast = (Stats(self), Broadcast(self)) if config.admin_chat_id else (None, None)
 
-    async def start_db(self, *queries: list[str | list]):
+    def start_db(self, *queries: list[str | list]):
         self.cur.execute('''
                     CREATE TABLE IF NOT EXISTS users (
                     user_id TEXT PRIMARY KEY,
@@ -155,8 +157,6 @@ class Stats:
         if temp is None:
             temp = {}
         table = await self.get_table(table_name)
-        if table_name == '':
-            print(table)
         result, total, users = [], 0, []
         for text, count in table.items():
             if text.endswith('users'):

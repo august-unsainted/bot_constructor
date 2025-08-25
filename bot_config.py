@@ -28,14 +28,15 @@ class BotConfig:
 
         self.data_folder = data_folder or Path.cwd() / 'data'
         self.default_answer = default_answer
-        self.default_args = default_args or {'parse_mode': 'HTML', 'disable_web_page_preview': True}
+        self.default_args = default_args or {'parse_mode': 'HTML'}
         self.back_exclusions = back_exclusions or ('start', 'broadcast', 'stat')
         self.admin_chat_id = int(admin_chat_id) if admin_chat_id else None
         self.jsons = self.keyboards = self.images = self.messages = None
         self.load_all()
         self.db = DBUtils(self)
-        self.router, self.stat_router = self.set_router()
+        self.router = self.set_router()
         self.stat_router = self.db.stat.router if self.db.stat else None
+        self.broadcast_router = self.db.broadcast.router if self.db.broadcast else None
 
     @private
     def get_previous_section(self, needle: str) -> str | None:
