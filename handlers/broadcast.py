@@ -5,7 +5,6 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 
 from config import ADMIN
-from handlers.start import handle_text_edit
 from utils.data import keyboards, messages_text
 from utils.db import count_users
 from utils.send_broadcast import send_broadcast
