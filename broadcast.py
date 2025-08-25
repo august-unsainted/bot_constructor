@@ -1,5 +1,5 @@
 import asyncio
-from typing import Any, Callable
+from typing import Any, Callable, Union
 
 from aiogram import Router, Bot, F
 from aiogram.exceptions import TelegramRetryAfter, TelegramAPIError, AiogramError, TelegramBadRequest
