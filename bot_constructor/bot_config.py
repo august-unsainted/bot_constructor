@@ -3,6 +3,7 @@ from typing import Callable
 import orjson
 from aiogram import Router
 from aiogram.exceptions import TelegramBadRequest
+from aiogram.filters import CommandStart
 from aiogram.types import InputMediaPhoto, Message, CallbackQuery
 from accessify import private
 
@@ -113,6 +114,16 @@ class BotConfig:
 
     def set_router(self) -> Router:
         router = Router()
+
+        @router.message(CommandStart())
+        async def cmd_start(message: Message):
+            # await message.answer(str(message.chat.id))
+            start_message = self.messages.get('cmd_start')
+            if 'photo' in start_message:
+                await message.answer_photo(**start_message)
+            else:
+                await message.answer(**start_message)
+            await self.db.add_user(message.from_user.id)
 
         if self.default_answer:
             @router.message()
