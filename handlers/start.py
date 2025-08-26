@@ -3,7 +3,7 @@ from aiogram.types import Message
 from aiogram.filters import CommandStart
 
 import config
-from bot_config import BotConfig
+from bot_constructor.bot_config import BotConfig
 
 router = Router()
 bot_config = BotConfig(default_answer='эщкере', admin_chat_id=config.ADMIN)
