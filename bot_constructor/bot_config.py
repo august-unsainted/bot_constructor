@@ -1,7 +1,7 @@
 from typing import Callable
 
 import orjson
-from aiogram import Router
+from aiogram import Router, Dispatcher
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import CommandStart
 from aiogram.types import InputMediaPhoto, Message, CallbackQuery
@@ -38,12 +38,23 @@ class BotConfig:
         self.stat_router = self.db.stat.router if self.db.stat else None
         self.broadcast_router = self.db.broadcast.router if self.db.broadcast else None
 
+    @staticmethod
+    def find_needle(key: str, kb: dict, needle: str) -> str | None:
+        for callback, text in kb.items():
+            if callback == needle:
+                return key
+            elif isinstance(text, dict):
+                result = BotConfig.find_needle(key, text, needle)
+                if result:
+                    return result
+        return None
+
     @private
     def get_previous_section(self, needle: str) -> str | None:
         for key, value in self.jsons['keyboards'].items():
-            for callback in value.keys():
-                if callback == needle:
-                    return key
+            result = self.find_needle(key, value, needle)
+            if result:
+                return result
         return None
 
     @private
@@ -145,6 +156,10 @@ class BotConfig:
             await callback.message.edit_media(**args)
         else:
             await self.handle_edit_message(callback.message, args)
+
+    def include_routers(self, dp: Dispatcher):
+        routers = [router for router in [self.stat_router, self.broadcast_router] if router]
+        dp.include_routers(*routers, self.router)
 
     @staticmethod
     async def handle_edit_message(message: Message, args: dict):
