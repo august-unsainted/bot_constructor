@@ -41,10 +41,10 @@ class DBUtils:
     async def execute_query(self, query: str, *args: Any) -> None | list[tuple]:
         result = self.cur.execute(query, tuple(args))
         self.db.commit()
-        query = query.strip()
-        if query.startswith('SELECT'):
+        query = query.strip().lower()
+        if query.startswith('select'):
             return result.fetchall()
-        elif query.startswith('INSERT'):
+        elif query.startswith('insert'):
             return self.cur.lastrowid
         return None
 
