@@ -1,7 +1,8 @@
 from typing import Callable
+from copy import deepcopy
 
 import orjson
-from aiogram import Router, Dispatcher
+from aiogram import Router, Dispatcher, F
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import CommandStart
 from aiogram.types import InputMediaPhoto, Message, CallbackQuery
@@ -33,6 +34,7 @@ class BotConfig:
         self.admin_chat_id = int(admin_chat_id) if admin_chat_id else None
         self.jsons = self.keyboards = self.images = self.messages = None
         self.load_all()
+        self.texts = self.jsons.get('messages')
         self.db = DBUtils(self)
         self.router = self.set_router()
         self.stat_router = self.db.stat.router if self.db.stat else None
@@ -95,16 +97,30 @@ class BotConfig:
             result[file_path.stem] = next(iter(data.values())) if len(data) == 1 else data
         self.jsons = self.load_files(json_dir, append_file)
 
+
+    @staticmethod
+    def generate_kb(back_callback: str = None, data: dict[str, str] = None) -> InlineKeyboardMarkup:
+        kb = []
+        if data:
+            for callback, text in data.items():
+                row_buttons = text if isinstance(text, dict) else None
+                append_row(kb, callback, text, row_buttons)
+        if back_callback:
+            append_row(kb, back_callback)
+        return InlineKeyboardMarkup(inline_keyboard=kb)
+
+        
     def load_keyboards(self) -> None:
         self.keyboards = {}
         for key, kb in self.jsons['keyboards'].items():
-            if key.endswith(self.back_exclusions) or 'back' in kb:
+            if key.endswith(self.back_exclusions) or 'back' in kb or 'start' in kb or 'Назад' in key:
                 back = None
             else:
                 back = self.get_previous_section(key)
-            self.keyboards[key] = generate_kb(back, kb)
+            self.keyboards[key] = self.generate_kb(back, kb)
         if self.keyboards.get('stat'):
             self.keyboards['stat'] = InlineKeyboardMarkup(inline_keyboard=[[row[0] for row in self.keyboards.get('stat').inline_keyboard]])
+
 
     def load_messages(self) -> None:
         raw_messages = self.jsons['messages']
@@ -137,7 +153,8 @@ class BotConfig:
             await self.db.add_user(message.from_user.id)
 
         if self.default_answer:
-            @router.message()
+            admin_chat = self.admin_chat_id or -1
+            @router.message(F.chat.id != admin_chat)
             async def handle_messages(message: Message):
                 await message.answer(self.default_answer)
 
@@ -147,15 +164,14 @@ class BotConfig:
 
         return router
 
-    async def handle_message(self, callback: CallbackQuery, additional: dict = None) -> None:
+    async def handle_message(self, callback: CallbackQuery, additional: dict = None) -> any:
         args = self.messages.get(callback.data) or self.default_args
         if additional:
             args = {**args, **additional}
 
         if args.get('media'):
-            await callback.message.edit_media(**args)
-        else:
-            await self.handle_edit_message(callback.message, args)
+            return await callback.message.edit_media(**args)
+        return await self.handle_edit_message(callback.message, args)
 
     def include_routers(self, dp: Dispatcher):
         routers = [router for router in [self.stat_router, self.broadcast_router] if router]
@@ -172,3 +188,11 @@ class BotConfig:
             except TelegramBadRequest:
                 pass
         return response
+
+    def edit_keyboard(self, key: str, template_kb: str, key_first: bool = False):
+        kb = deepcopy(self.keyboards.get(template_kb).inline_keyboard)
+        for i in range(len(kb)):
+            for j in range(len(kb[i])):
+                btn_data = kb[i][j].callback_data
+                kb[i][j].callback_data = f'{key}_{btn_data}' if key_first else f'{btn_data}_{key}'
+        return InlineKeyboardMarkup(inline_keyboard=kb)

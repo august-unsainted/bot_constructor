@@ -18,6 +18,7 @@ from bot_constructor.utils_funcs import find_resource_path, create_input_file
 class DBUtils:
     def __init__(self, config):
         self.db = sq.connect(find_resource_path('data/bot.db'))
+        self.db.row_factory = sq.Row
         self.cur = self.db.cursor()
         self.__dict__.update({key: config.jsons[key] for key in ['keyboards', 'messages', 'stats'] if key in config.jsons})
         self.config = config
@@ -38,12 +39,13 @@ class DBUtils:
                 self.cur.execute(query[0])
         self.db.commit()
 
-    async def execute_query(self, query: str, *args: Any) -> None | list[tuple]:
+    def execute_query(self, query: str, *args: Any) -> None | list[tuple]:
         result = self.cur.execute(query, tuple(args))
         self.db.commit()
         query = query.strip().lower()
         if query.startswith('select'):
-            return result.fetchall()
+            rows = result.fetchall()
+            return rows
         elif query.startswith('insert'):
             return self.cur.lastrowid
         return None
