@@ -43,7 +43,7 @@ class BotConfig:
     @staticmethod
     def find_needle(key: str, kb: dict, needle: str) -> str | None:
         for callback, text in kb.items():
-            if callback == needle:
+            if callback == needle and key != needle:
                 return key
             elif isinstance(text, dict):
                 result = BotConfig.find_needle(key, text, needle)

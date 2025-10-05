@@ -40,15 +40,17 @@ class DBUtils:
         self.db.commit()
 
     def execute_query(self, query: str, *args: Any) -> None | list[tuple]:
-        result = self.cur.execute(query, tuple(args))
-        self.db.commit()
+        query_result = self.cur.execute(query, tuple(args))
         query = query.strip().lower()
-        if query.startswith('select'):
-            rows = result.fetchall()
-            return rows
+        if query.startswith('select') or 'returning' in query:
+            rows = query_result.fetchall()
+            result = rows
         elif query.startswith('insert'):
-            return self.cur.lastrowid
-        return None
+            result = self.cur.lastrowid
+        else:
+            result = None
+        self.db.commit()
+        return result
 
     async def add_user(self, user_id: int | str) -> None:
         await self.execute_query(
