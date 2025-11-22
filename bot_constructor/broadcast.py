@@ -21,7 +21,7 @@ class Broadcast:
         self.db = db
         self.config = self.db.config
         kbs = self.config.keyboards
-        self.keyboards = {name.split('_')[-1]: kb for name, kb in kbs if name.startswith('broadcast')}
+        self.keyboards = {name.split('_')[-1]: kb for name, kb in kbs.items() if name.startswith('broadcast')}
         self.texts = self.config.jsons.get('broadcast')
         self.base_args = self.config.default_args
         self.router = self.register_handlers()
@@ -44,7 +44,7 @@ class Broadcast:
             await state.update_data(text=message.text)
             await self.prompt_media(message, state, bot)
 
-        media_kb = self.keyboards.get('broadcast_media')
+        media_kb = self.keyboards.get('media')
 
         @router.message(States.media)
         async def handle_media_input(message: Message, state: FSMContext, bot: Bot):
@@ -90,7 +90,7 @@ class Broadcast:
     async def format_preview(self, state: FSMContext) -> str:
         """Формирует текст предпросмотра рассылки с количеством получателей."""
         data = await state.get_data()
-        return self.texts.get('result').format(data.get('text'), await self.count_active())
+        return self.texts.get('media').format(data.get('text'), await self.count_active())
 
     async def send_safe(self, user_id: str, func: Callable, params: dict[str, str]) -> bool:
         """Выполняет безопасную отправку сообщения с обработкой ошибок и лимитов."""
@@ -134,9 +134,7 @@ class Broadcast:
                 count += sum(results)
             await self.db.count_users()
         finally:
-            text = self.texts.get('result').format(
-                broadcast_params['text'], count, sender.first_name, sender.username
-            )
+            text = self.texts.get('result').format(broadcast_params['text'], count, sender.username)
             await self.update_status_msg(bot, text, broadcast_params, admin_params)
 
     @staticmethod
@@ -179,11 +177,12 @@ class Broadcast:
         await state.clear()
         args = {
             'text': self.texts.get('start').format(await self.count_active()),
-            'reply_markup': self.keyboards['cancel']
+            'reply_markup': self.keyboards.get('cancel')
         }
 
         if isinstance(event, Message):
             response = await event.answer(**args)
+            await event.delete()
         else:
             response = await self.config.handle_edit_message(event.message, args)
 
