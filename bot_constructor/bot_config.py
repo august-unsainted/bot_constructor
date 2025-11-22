@@ -1,3 +1,4 @@
+from email.policy import default
 from typing import Callable
 from copy import deepcopy
 
@@ -13,7 +14,8 @@ from bot_constructor.utils_funcs import *
 
 
 class BotConfig:
-    def __init__(self, data_folder: Path = None, default_answer: str = '', default_args: dict = None, back_exclusions: tuple = None, admin_chat_id: int | str = None) -> None:
+    def __init__(self, data_folder: Path = None, default_answer: str = '', default_message: str = '',
+                 default_args: dict = None, back_exclusions: tuple = None, admin_chat_id: int | str = None) -> None:
         """
         Создает быструю конфигурацию бота из JSON файлов.
 
@@ -29,6 +31,7 @@ class BotConfig:
 
         self.data_folder = data_folder or Path.cwd() / 'data'
         self.default_answer = default_answer
+        self.default_message = default_message
         self.default_args = default_args or {'parse_mode': 'HTML'}
         self.back_exclusions = back_exclusions or ('start', 'broadcast', 'stat')
         self.admin_chat_id = int(admin_chat_id) if admin_chat_id else None
@@ -97,7 +100,6 @@ class BotConfig:
             result[file_path.stem] = next(iter(data.values())) if len(data) == 1 else data
         self.jsons = self.load_files(json_dir, append_file)
 
-
     @staticmethod
     def generate_kb(back_callback: str = None, data: dict[str, str] = None) -> InlineKeyboardMarkup:
         kb = []
@@ -109,24 +111,24 @@ class BotConfig:
             append_row(kb, back_callback)
         return InlineKeyboardMarkup(inline_keyboard=kb)
 
-        
     def load_keyboards(self) -> None:
         self.keyboards = {}
         for key, kb in self.jsons['keyboards'].items():
-            if key.endswith(self.back_exclusions) or 'back' in kb or 'start' in kb or 'Назад' in key:
+            has_back = not kb.pop('back', True)
+            if key.endswith(self.back_exclusions) or has_back or 'start' in kb or 'Назад' in key:
                 back = None
             else:
                 back = self.get_previous_section(key)
             self.keyboards[key] = self.generate_kb(back, kb)
         if self.keyboards.get('stat'):
-            self.keyboards['stat'] = InlineKeyboardMarkup(inline_keyboard=[[row[0] for row in self.keyboards.get('stat').inline_keyboard]])
-
+            self.keyboards['stat'] = InlineKeyboardMarkup(
+                inline_keyboard=[[row[0] for row in self.keyboards.get('stat').inline_keyboard]])
 
     def load_messages(self) -> None:
         raw_messages = self.jsons['messages']
         self.messages = {
             'cmd_start': {
-                'photo':        self.images.get('cmd_start'), 'caption': raw_messages.get('start'),
+                'photo': self.images.get('cmd_start'), 'caption': raw_messages.get('start'),
                 'reply_markup': self.keyboards.get('start'), **self.default_args
             }
         }
@@ -152,11 +154,17 @@ class BotConfig:
                 await message.answer(**start_message)
             await self.db.add_user(message.from_user.id)
 
-        if self.default_answer:
+        if self.default_answer or self.default_message:
             admin_chat = self.admin_chat_id or -1
+            default_mess = self.default_message
+            default_ans = self.default_answer
+
             @router.message(F.chat.id != admin_chat)
             async def handle_messages(message: Message):
-                await message.answer(self.default_answer)
+                if default_mess:
+                    await message.answer(self.messages.get(default_mess))
+                else:
+                    await message.answer(default_ans)
 
         @router.callback_query()
         async def handle_callback(callback: CallbackQuery):
@@ -174,8 +182,8 @@ class BotConfig:
         return await self.handle_edit_message(callback.message, args)
 
     def include_routers(self, dp: Dispatcher):
-        routers = [router for router in [self.stat_router, self.broadcast_router] if router]
-        dp.include_routers(*routers, self.router)
+        routers = [router for router in [self.stat_router, self.broadcast_router, self.router] if router]
+        dp.include_routers(*routers)
 
     @staticmethod
     async def handle_edit_message(message: Message, args: dict):
