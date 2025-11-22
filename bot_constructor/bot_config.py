@@ -34,7 +34,7 @@ class BotConfig:
         self.default_message = default_message
         self.default_args = default_args or {'parse_mode': 'HTML'}
         self.name_in_start = name_in_start
-        self.back_exclusions = back_exclusions or ('start', 'broadcast', 'stat')
+        self.back_exclusions = (*back_exclusions, 'start', 'broadcast', 'stat')
         self.admin_chat_id = int(admin_chat_id) if admin_chat_id else None
         self.jsons = self.keyboards = self.images = self.messages = None
         self.load_all()
@@ -57,7 +57,7 @@ class BotConfig:
 
     @private
     def get_previous_section(self, needle: str) -> str | None:
-        for key, value in self.jsons['keyboards'].items():
+        for key, value in self.jsons.get('keyboards').items():
             result = self.find_needle(key, value, needle)
             if result:
                 return result
@@ -199,7 +199,10 @@ class BotConfig:
 
         if args.get('media'):
             return await callback.message.edit_media(**args)
-        return await self.handle_edit_message(callback.message, args)
+        try:
+            return await self.handle_edit_message(callback.message, args)
+        except TypeError:
+            print(f"Нет текста сообщения для ключа {callback.data}")
 
     def include_routers(self, dp: Dispatcher):
         routers = [router for router in [self.stat_router, self.broadcast_router, self.router] if router]
@@ -208,14 +211,13 @@ class BotConfig:
     @staticmethod
     async def handle_edit_message(message: Message, args: dict):
         if message.text:
-            response = await message.edit_text(**args)
-        else:
-            response = await message.answer(**args)
-            try:
-                await message.delete()
-            except TelegramBadRequest:
-                pass
-        return response
+            return await message.edit_text(**args)
+        response = await message.answer(**args)
+        try:
+            await message.delete()
+            return response
+        except TelegramBadRequest:
+            return None
 
     def edit_keyboard(self, key: str, template_kb: str, key_first: bool = False):
         kb = deepcopy(self.keyboards.get(template_kb).inline_keyboard)
