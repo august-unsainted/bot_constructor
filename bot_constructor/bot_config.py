@@ -1,4 +1,3 @@
-from email.policy import default
 from typing import Callable
 from copy import deepcopy
 
@@ -14,8 +13,9 @@ from bot_constructor.utils_funcs import *
 
 
 class BotConfig:
-    def __init__(self, data_folder: Path = None, default_answer: str = '', default_message: str = '',
-                 default_args: dict = None, back_exclusions: tuple = None, admin_chat_id: int | str = None) -> None:
+    def __init__(self, data_folder: Path = None, default_answer: str = '', default_message: str = '', default_args: dict = None,
+                 back_exclusions: tuple = None, admin_chat_id: int | str = None,
+                 name_in_start: bool = False) -> None:
         """
         Создает быструю конфигурацию бота из JSON файлов.
 
@@ -33,6 +33,7 @@ class BotConfig:
         self.default_answer = default_answer
         self.default_message = default_message
         self.default_args = default_args or {'parse_mode': 'HTML'}
+        self.name_in_start = name_in_start
         self.back_exclusions = back_exclusions or ('start', 'broadcast', 'stat')
         self.admin_chat_id = int(admin_chat_id) if admin_chat_id else None
         self.jsons = self.keyboards = self.images = self.messages = None
@@ -44,7 +45,7 @@ class BotConfig:
         self.broadcast_router = self.db.broadcast.router if self.db.broadcast else None
 
     @staticmethod
-    def find_needle(key: str, kb: dict, needle: str) -> str | None:
+    def find_needle(key: str, kb: dict | str, needle: str) -> str | None:
         for callback, text in kb.items():
             if callback == needle and key != needle:
                 return key
@@ -98,6 +99,7 @@ class BotConfig:
         def append_file(result: dict, file_path: Path):
             data = orjson.loads(file_path.read_bytes())
             result[file_path.stem] = next(iter(data.values())) if len(data) == 1 else data
+
         self.jsons = self.load_files(json_dir, append_file)
 
     @staticmethod
@@ -126,12 +128,13 @@ class BotConfig:
 
     def load_messages(self) -> None:
         raw_messages = self.jsons['messages']
-        self.messages = {
-            'cmd_start': {
-                'photo': self.images.get('cmd_start'), 'caption': raw_messages.get('start'),
-                'reply_markup': self.keyboards.get('start'), **self.default_args
-            }
-        }
+        start = {'reply_markup': self.keyboards.get('start'), **self.default_args}
+
+        if self.images.get('cmd_start'):
+            start = {'photo': self.images.get('cmd_start'), 'caption': raw_messages.get('start'), **start}
+        else:
+            start = {'text': raw_messages.get('start'), **start}
+        self.messages = {'cmd_start': start}
         for callback in raw_messages.keys():
             args = {**self.default_args,
                     'reply_markup': self.keyboards.get(callback) or generate_kb(self.get_previous_section(callback))}
@@ -141,14 +144,25 @@ class BotConfig:
                 args['text'] = raw_messages.get(callback)
             self.messages[callback] = args
 
+    async def format_start_message(self, key: str, name: str):
+        message = self.messages.get(key)
+        has_photo = 'photo' in message
+        if self.name_in_start:
+            if 'media' in message:
+                message['media'].caption = message['media'].caption.format(name)
+            else:
+                key = 'caption' if has_photo else 'text'
+                message[key] = message[key].format(name)
+        return has_photo, message
+
     def set_router(self) -> Router:
         router = Router()
 
         @router.message(CommandStart())
         async def cmd_start(message: Message):
             # await message.answer(str(message.chat.id))
-            start_message = self.messages.get('cmd_start')
-            if 'photo' in start_message:
+            has_time, start_message = await self.format_start_message('cmd_start', message.from_user.first_name)
+            if has_time:
                 await message.answer_photo(**start_message)
             else:
                 await message.answer(**start_message)
@@ -165,6 +179,12 @@ class BotConfig:
                     await message.answer(self.messages.get(default_mess))
                 else:
                     await message.answer(default_ans)
+
+        if self.name_in_start:
+            @router.callback_query(F.data == 'start')
+            async def handle_start(callback: CallbackQuery):
+                _, message = await self.format_start_message('start', callback.from_user.first_name);
+                await self.handle_message(callback, message)
 
         @router.callback_query()
         async def handle_callback(callback: CallbackQuery):
