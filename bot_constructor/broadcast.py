@@ -6,13 +6,14 @@ from aiogram.exceptions import TelegramRetryAfter, TelegramAPIError, AiogramErro
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
-from aiogram.types import Message, InlineKeyboardMarkup, CallbackQuery, User, InputMediaPhoto
+from aiogram.types import Message, InlineKeyboardMarkup, CallbackQuery, User, InputMediaPhoto, InputMediaVideo
 
 
 class States(StatesGroup):
     message_id = State()
     text = State()
     media = State()
+    media_type = State()
 
 
 class Broadcast:
@@ -49,16 +50,18 @@ class Broadcast:
         @router.message(States.media)
         async def handle_media_input(message: Message, state: FSMContext, bot: Bot):
             await message.delete()
-            if not message.photo:
+            if not (message.photo or message.video):
                 return await self.prompt_media(message, state, bot)
 
-            media = message.photo[-1].file_id
-            await state.update_data(media=media)
+            caption = await self.format_preview(state)
+            has_photo = message.photo is not None
+            media_file = (message.photo[-1] if has_photo else message.video).file_id
+            media_type = 'photo' if has_photo else 'video'
+            args = { "media": media_file, "caption": caption, **self.base_args}
+            media = InputMediaPhoto(**args) if has_photo else InputMediaVideo(**args)
 
-            preview_text = await self.format_preview(state)
-            input_media = InputMediaPhoto(media=media, caption=preview_text, **self.base_args)
-
-            await bot.edit_message_media(media=input_media, **await self.get_chat_info(message, state, media_kb))
+            await state.update_data(media_type=media_type, media=media_file)
+            await bot.edit_message_media(media=media, **await self.get_chat_info(message, state, media_kb))
             return None
 
         @router.callback_query(F.data == 'skip_pictures')
@@ -75,7 +78,7 @@ class Broadcast:
             admin_params = {**await self.get_chat_info(callback.message), **self.base_args}
             await self.update_status_msg(callback.message.bot, self.texts.get('sending'), data, admin_params)
 
-            params = {key: data[key] for key in ['text', 'media']}
+            params = {key: data[key] for key in ['text', 'media', 'media_type']}
             await self.execute_broadcast(bot, callback.from_user, admin_params, params)
 
         return router
@@ -113,12 +116,13 @@ class Broadcast:
         semaphore = asyncio.Semaphore(20)
 
         media = broadcast_params['media']
+        media_type = broadcast_params.get('media_type')
         args = self.get_content_payload(broadcast_params)
         args['reply_markup'] = self.keyboards.get('receive')
 
         if media:
-            func = bot.send_photo
-            args['photo'] = media
+            func = bot.send_photo if media_type == 'photo' else bot.send_video
+            args[media_type] = media
         else:
             func = bot.send_message
 
