@@ -30,7 +30,7 @@ class Broadcast:
         """Регистрирует обработчики сообщений и колбэков для рассылки."""
         router = Router()
 
-        router.message.register(self.start_broadcast, Command('mail'), F.chat.id == self.config.admin_chat_id)
+        router.message.register(self.start_broadcast, Command('mail'), F.chat.id == self.config.admin_chat)
         router.callback_query.register(self.start_broadcast, F.data == 'broadcast')
 
         @router.callback_query(F.data == 'broadcast_cancel')

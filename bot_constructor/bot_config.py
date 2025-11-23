@@ -14,7 +14,7 @@ from bot_constructor.utils_funcs import *
 
 class BotConfig:
     def __init__(self, data_folder: Path = None, default_answer: str = '', default_message: str = '', default_args: dict = None,
-                 back_exclusions: tuple = None, admin_chat_id: int | str = None,
+                 back_exclusions: tuple = None, admin_chat: int | str = None, dev_chat: int | str = None,
                  name_in_start: bool = False, stats_exclusions: list = None) -> None:
         """
         Создает быструю конфигурацию бота из JSON файлов.
@@ -35,7 +35,8 @@ class BotConfig:
         self.default_args = default_args or {'parse_mode': 'HTML'}
         self.name_in_start = name_in_start
         self.back_exclusions = (*back_exclusions, 'start', 'broadcast', 'stat')
-        self.admin_chat_id = int(admin_chat_id) if admin_chat_id else None
+        self.admin_chat = int(admin_chat) if admin_chat else None
+        self.dev_chat = int(dev_chat) if dev_chat else None
         self.jsons = self.keyboards = self.images = self.messages = None
         self.load_all()
         self.texts = self.jsons.get('messages')
@@ -169,7 +170,7 @@ class BotConfig:
             await self.db.add_user(message.from_user.id)
 
         if self.default_answer or self.default_message:
-            admin_chat = self.admin_chat_id or -1
+            admin_chat = self.admin_chat or -1
             default_mess = self.default_message
             default_ans = self.default_answer
 

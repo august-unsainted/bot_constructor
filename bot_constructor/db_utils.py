@@ -24,8 +24,10 @@ class DBUtils:
             {key: config.jsons[key] for key in ['keyboards', 'messages', 'stats'] if key in config.jsons})
         self.config = config
         self.start_db()
-        self.stat, self.broadcast = (Stats(self, stats_exclusions), Broadcast(self)) if config.admin_chat_id else (None,
-                                                                                                                   None)
+        self.stat, self.broadcast = None, None
+        if config.admin_chat:
+            self.stat = Stats(self, stats_exclusions)
+            self.broadcast = Broadcast(self)
 
     def start_db(self, *queries: list[str | list]):
         self.cur.execute('''
@@ -89,7 +91,7 @@ class Stats:
         self.config = dbutils.config
         self.db = dbutils.db
         self.cur = self.db.cursor()
-        self.admin_chat = self.config.admin_chat_id
+        self.admin_chat = self.config.admin_chat
         self.exclusions = stats_exclusions
         self.tracks = self.config.jsons.get('stats')
         messages = [self.config.messages.get(key) for key in ['all_stat', 'stat']]
@@ -115,12 +117,13 @@ class Stats:
     def set_router(self) -> Router:
         router = Router()
 
-        @router.message(Command('stat'), F.chat.id == self.config.admin_chat_id)
+        @router.message(Command('stat'), F.chat.id == self.admin_chat)
         async def stat_cmd(message: Message, state: FSMContext):
             await message.delete()
             await message.answer(**await self.format_stat(state))
 
-        @router.message(Command('db'), F.chat.id == self.config.admin_chat_id)
+        chat_ids = [chat for chat in [self.admin_chat, self.config.dev_chat] if chat is not None]
+        @router.message(Command('db'), F.chat.id.in_(chat_ids))
         async def db_cmd(message: Message):
             await message.delete()
             await message.answer_document(create_input_file(self.config.data_folder / 'bot.db'),
