@@ -1,4 +1,4 @@
-from typing import Callable
+from typing import Callable, Any
 from copy import deepcopy
 
 import orjson
@@ -15,7 +15,7 @@ from bot_constructor.utils_funcs import *
 class BotConfig:
     def __init__(self, data_folder: Path = None, default_answer: str = '', default_message: str = '', default_args: dict = None,
                  back_exclusions: tuple = None, admin_chat_id: int | str = None,
-                 name_in_start: bool = False) -> None:
+                 name_in_start: bool = False, stats_exclusions: list = None) -> None:
         """
         Создает быструю конфигурацию бота из JSON файлов.
 
@@ -39,7 +39,7 @@ class BotConfig:
         self.jsons = self.keyboards = self.images = self.messages = None
         self.load_all()
         self.texts = self.jsons.get('messages')
-        self.db = DBUtils(self)
+        self.db = DBUtils(self, stats_exclusions or [])
         self.router = self.set_router()
         self.stat_router = self.db.stat.router if self.db.stat else None
         self.broadcast_router = self.db.broadcast.router if self.db.broadcast else None
@@ -175,24 +175,24 @@ class BotConfig:
 
             @router.message(F.chat.id != admin_chat)
             async def handle_messages(message: Message):
-                if default_mess:
-                    await message.answer(self.messages.get(default_mess))
-                else:
-                    await message.answer(default_ans)
+                await message.answer(**self.messages.get(default_mess) if default_mess else default_ans)
 
         if self.name_in_start:
             @router.callback_query(F.data == 'start')
             async def handle_start(callback: CallbackQuery):
-                _, message = await self.format_start_message('start', callback.from_user.first_name);
+                _, message = await self.format_start_message('start', callback.from_user.first_name)
                 await self.handle_message(callback, message)
 
+        stat = self.db.stat
         @router.callback_query()
         async def handle_callback(callback: CallbackQuery):
+            if stat and callback.data in stat.tracks and callback.data not in stat.exclusions:
+                stat.increase_stat(callback.data)
             await self.handle_message(callback)
 
         return router
 
-    async def handle_message(self, callback: CallbackQuery, additional: dict = None) -> any:
+    async def handle_message(self, callback: CallbackQuery, additional: dict = None) -> Any:
         args = self.messages.get(callback.data) or self.default_args
         if additional:
             args = {**args, **additional}
