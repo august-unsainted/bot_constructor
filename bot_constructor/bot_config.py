@@ -13,7 +13,8 @@ from bot_constructor.utils_funcs import *
 
 
 class BotConfig:
-    def __init__(self, data_folder: Path = None, default_answer: str = '', default_message: str = '', default_args: dict = None,
+    def __init__(self, data_folder: Path = None, default_answer: str = '', default_message: str = '',
+                 default_args: dict = None,
                  back_exclusions: tuple = None, admin_chat: int | str = None, dev_chat: int | str = None,
                  name_in_start: bool = False, stats_exclusions: list = None) -> None:
         """
@@ -109,9 +110,9 @@ class BotConfig:
         if data:
             for callback, text in data.items():
                 row_buttons = text if isinstance(text, dict) else None
-                append_row(kb, callback, text, row_buttons)
+                kb.append(BotConfig.generate_row(callback, text, row_buttons))
         if back_callback:
-            append_row(kb, back_callback)
+            kb.append(BotConfig.generate_row(back_callback))
         return InlineKeyboardMarkup(inline_keyboard=kb)
 
     def load_keyboards(self) -> None:
@@ -137,8 +138,11 @@ class BotConfig:
             start = {'text': raw_messages.get('start'), **start}
         self.messages = {'cmd_start': start}
         for callback in raw_messages.keys():
-            args = {**self.default_args,
-                    'reply_markup': self.keyboards.get(callback) or generate_kb(self.get_previous_section(callback))}
+            args = {
+                **self.default_args,
+                'reply_markup': self.keyboards.get(callback) or
+                                self.generate_kb(self.get_previous_section(callback))
+            }
             if self.images.get(callback):
                 args['media'] = self.images.get(callback)
             else:
@@ -185,6 +189,7 @@ class BotConfig:
                 await self.handle_message(callback, message)
 
         stat = self.db.stat
+
         @router.callback_query()
         async def handle_callback(callback: CallbackQuery):
             if stat and callback.data in stat.tracks and callback.data not in stat.exclusions:
@@ -227,3 +232,14 @@ class BotConfig:
                 btn_data = kb[i][j].callback_data
                 kb[i][j].callback_data = f'{key}_{btn_data}' if key_first else f'{btn_data}_{key}'
         return InlineKeyboardMarkup(inline_keyboard=kb)
+
+    @staticmethod
+    def get_btn(callback: str, text: str = 'Назад ⬅️') -> InlineKeyboardButton:
+        key = 'url' if validators.url(callback) else 'callback_data'
+        return InlineKeyboardButton(text=text, **{key: callback})
+
+    @staticmethod
+    def generate_row(callback: str, text: str = 'Назад ⬅️', btns: dict = None) -> list[InlineKeyboardButton]:
+        btns = btns or {callback: text}
+        return [BotConfig.get_btn(callback, text) for callback, text in btns.items()]
+
