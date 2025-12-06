@@ -56,7 +56,7 @@ class DBUtils:
         self.db.commit()
         return result
 
-    async def add_user(self, user_id: int | str) -> None:
+    def add_user(self, user_id: int | str) -> None:
         self.execute_query(
             f'''
                 INSERT INTO users (user_id)
