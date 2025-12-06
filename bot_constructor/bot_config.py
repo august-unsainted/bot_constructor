@@ -165,13 +165,8 @@ class BotConfig:
 
         @router.message(CommandStart())
         async def cmd_start(message: Message):
-            # await message.answer(str(message.chat.id))
-            has_time, start_message = await self.format_start_message('cmd_start', message.from_user.first_name)
-            if has_time:
-                await message.answer_photo(**start_message)
-            else:
-                await message.answer(**start_message)
-            await self.db.add_user(message.from_user.id)
+            await self.handle_start(message)
+            self.db.add_user(message.from_user.id)
 
         if self.default_answer or self.default_message:
             admin_chat = self.admin_chat or -1
@@ -184,9 +179,13 @@ class BotConfig:
 
         if self.name_in_start:
             @router.callback_query(F.data == 'start')
-            async def handle_start(callback: CallbackQuery):
+            async def start_callback(callback: CallbackQuery):
                 _, message = await self.format_start_message('start', callback.from_user.first_name)
                 await self.handle_message(callback, message)
+
+        @router.callback_query(F.data == 'delete_message')
+        async def delete_message(callback: CallbackQuery):
+            await callback.message.delete()
 
         stat = self.db.stat
 
@@ -197,6 +196,13 @@ class BotConfig:
             await self.handle_message(callback)
 
         return router
+
+    async def handle_start(self, message: Message):
+        has_photo, start_message = await self.format_start_message('cmd_start', message.from_user.first_name)
+        if has_photo:
+            await message.answer_photo(**start_message)
+        else:
+            await message.answer(**start_message)
 
     async def handle_message(self, callback: CallbackQuery, additional: dict = None) -> Any:
         args = self.messages.get(callback.data) or self.default_args
